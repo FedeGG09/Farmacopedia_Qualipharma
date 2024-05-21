@@ -1,4 +1,5 @@
 import streamlit as st
+import pandas as pd
 from document_analysis import (
     extraer_texto_pdf,
     extraer_texto_docx,
@@ -50,6 +51,7 @@ def extraer_texto(file_type, file):
 def load_manual(texto_manual, indice_manual):
     tokens_referencia = tokenizar_lineamientos([texto_manual])
     almacenar_reglas_vectorizadas(texto_manual, tokens_referencia, indice_manual)
+    st.session_state.tokens_referencia = tokens_referencia
     st.success("Manual cargado y vectorizado con éxito.")
     return tokens_referencia
 
@@ -147,6 +149,7 @@ if st.sidebar.button("Cargar y Vectorizar Manual") and uploaded_reference_file:
         "2.4.3. Extension assessment for centralised procedure"
     ]
     tokens_referencia = load_manual(texto_manual, indice_manual)
+    st.session_state['manual_cargado'] = True
 
 st.sidebar.header("Comparar Documentos Adicionales")
 uploaded_file1 = st.sidebar.file_uploader("Subir primer archivo adicional", type=["pdf", "txt", "docx"])
@@ -157,35 +160,41 @@ if uploaded_file1 and uploaded_file2:
     st.sidebar.success(f"Archivos adicionales {uploaded_file1.name} y {uploaded_file2.name} cargados con éxito.")
 
 if st.sidebar.button("Comparar Documentos Adicionales") and uploaded_file1 and uploaded_file2:
-    if 'tokens_referencia' in locals():
+    if st.session_state.get('manual_cargado', False):
+        tokens_referencia = st.session_state.get('tokens_referencia', [])
         diferencias_vectorizadas1, diferencias_vectorizadas2 = compare_additional_files(tokens_referencia, uploaded_file1, uploaded_file2, file1_type, file2_type)
+        st.session_state['diferencias_vectorizadas1'] = diferencias_vectorizadas1
+        st.session_state['diferencias_vectorizadas2'] = diferencias_vectorizadas2
     else:
         st.error("Primero debes cargar y vectorizar el manual de referencia.")
 
-# Función para verificar cumplimiento de las diferencias con el manual
-def verify_differences_compliance(diferencias_vectorizadas, tokens_referencia):
-    diferencias_no_cumplen = []
-    for diferencia in diferencias_vectorizadas:
-        if diferencia['contenido_documento'] not in tokens_referencia:
-            diferencias_no_cumplen.append(diferencia)
-    
-    if diferencias_no_cumplen:
-        st.warning("Algunas diferencias no cumplen con las normativas establecidas en el manual de referencia.")
-        st.header("Diferencias No Cumplen con el Manual")
-        diferencias_tabla = [
-            [diferencia.get('seccion', 'N/A'), 
-             diferencia.get('contenido_referencia', 'N/A'), 
-             diferencia.get('contenido_documento', 'N/A'), 
-             diferencia.get('tipo', 'N/A'),
-             diferencia.get('recomendacion', 'N/A')]
-            for diferencia in diferencias_no_cumplen
-        ]
-        st.table(pd.DataFrame(diferencias_tabla, columns=["Línea", "Sección", "Contenido de Referencia", "Tipo", "Recomendación"]))
-    else:
-        st.success("Todas las diferencias cumplen con las normativas establecidas en el manual de referencia.")
-
 if st.sidebar.button("Verificar Cumplimiento de Diferencias") and uploaded_file1 and uploaded_file2:
-    if 'tokens_referencia' in locals():
+    if st.session_state.get('manual_cargado', False):
+        tokens_referencia = st.session_state.get('tokens_referencia', [])
+        diferencias_vectorizadas1 = st.session_state.get('diferencias_vectorizadas1', [])
+        diferencias_vectorizadas2 = st.session_state.get('diferencias_vectorizadas2', [])
+
+        def verify_differences_compliance(diferencias_vectorizadas, tokens_referencia):
+            diferencias_no_cumplen = []
+            for diferencia in diferencias_vectorizadas:
+                if diferencia['contenido_documento'] not in tokens_referencia:
+                    diferencias_no_cumplen.append(diferencia)
+
+            if diferencias_no_cumplen:
+                st.warning("Algunas diferencias no cumplen con las normativas establecidas en el manual de referencia.")
+                st.header("Diferencias No Cumplen con el Manual")
+                diferencias_tabla = [
+                    [diferencia.get('seccion', 'N/A'), 
+                     diferencia.get('contenido_referencia', 'N/A'), 
+                     diferencia.get('contenido_documento', 'N/A'), 
+                     diferencia.get('tipo', 'N/A'),
+                     diferencia.get('recomendacion', 'N/A')]
+                    for diferencia in diferencias_no_cumplen
+                ]
+                st.table(pd.DataFrame(diferencias_tabla, columns=["Línea", "Sección", "Contenido de Referencia", "Tipo", "Recomendación"]))
+            else:
+                st.success("Todas las diferencias cumplen con las normativas establecidas en el manual de referencia.")
+
         verify_differences_compliance(diferencias_vectorizadas1, tokens_referencia)
         verify_differences_compliance(diferencias_vectorizadas2, tokens_referencia)
     else:

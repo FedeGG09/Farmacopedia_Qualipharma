@@ -32,7 +32,7 @@ def procesar_documentos(uploaded_reference_file, uploaded_compare_file, referenc
              diferencia.get('recomendacion', 'N/A')]
             for diferencia in diferencias_vectorizadas
         ]
-        st.table(diferencias_tabla)
+        st.table(pd.DataFrame(diferencias_tabla, columns=["Línea", "Sección", "Contenido de Referencia", "Tipo", "Recomendación"]))
     else:
         st.info("No se encontraron diferencias entre los documentos.")
 
@@ -67,9 +67,38 @@ def verify_file_compliance(tokens_referencia, texto_comparar):
              diferencia.get('recomendacion', 'N/A')]
             for diferencia in diferencias
         ]
-        st.table(diferencias_tabla)
+        st.table(pd.DataFrame(diferencias_tabla, columns=["Línea", "Sección", "Contenido de Referencia", "Tipo", "Recomendación"]))
     else:
         st.success("El documento cumple con las normativas establecidas en el manual de referencia.")
+
+# Función para comparar dos archivos adicionales con el manual
+def compare_additional_files(tokens_referencia, file1, file2, file1_type, file2_type):
+    texto1 = extraer_texto(file1_type, file1)
+    texto2 = extraer_texto(file2_type, file2)
+
+    diferencias1 = encontrar_diferencias(texto1, texto2)
+    diferencias_vectorizadas1 = vectorizar_y_tokenizar_diferencias(
+        diferencias1, tokens_referencia, file1.name, file2.name
+    )
+    
+    diferencias2 = encontrar_diferencias(texto2, texto1)
+    diferencias_vectorizadas2 = vectorizar_y_tokenizar_diferencias(
+        diferencias2, tokens_referencia, file2.name, file1.name
+    )
+
+    st.success("Las diferencias entre los documentos adicionales han sido encontradas y vectorizadas.")
+    st.header("Diferencias Encontradas entre los Documentos Adicionales")
+    diferencias_tabla = [
+        [diferencia.get('seccion', 'N/A'), 
+         diferencia.get('contenido_referencia', 'N/A'), 
+         diferencia.get('contenido_documento', 'N/A'), 
+         diferencia.get('tipo', 'N/A'),
+         diferencia.get('recomendacion', 'N/A')]
+        for diferencia in diferencias_vectorizadas1 + diferencias_vectorizadas2
+    ]
+    st.table(pd.DataFrame(diferencias_tabla, columns=["Línea", "Sección", "Contenido de Referencia", "Tipo", "Recomendación"]))
+    
+    return diferencias_vectorizadas1, diferencias_vectorizadas2
 
 # Interfaz Streamlit
 st.set_page_config(page_title="Qualipharma - Analytics Town", page_icon="🧪")
@@ -119,31 +148,45 @@ if st.sidebar.button("Cargar y Vectorizar Manual") and uploaded_reference_file:
     ]
     tokens_referencia = load_manual(texto_manual, indice_manual)
 
-if st.sidebar.button("Verificar Cumplimiento de Archivo") and uploaded_reference_file and uploaded_compare_file:
-    texto_referencia = extraer_texto(reference_file_type, uploaded_reference_file)
-    tokens_referencia = tokenizar_lineamientos([texto_referencia])
-    texto_comparar = extraer_texto(compare_file_type, uploaded_compare_file)
-    verify_file_compliance(tokens_referencia, texto_comparar)
+st.sidebar.header("Comparar Documentos Adicionales")
+uploaded_file1 = st.sidebar.file_uploader("Subir primer archivo adicional", type=["pdf", "txt", "docx"])
+uploaded_file2 = st.sidebar.file_uploader("Subir segundo archivo adicional", type=["pdf", "txt", "docx"])
+if uploaded_file1 and uploaded_file2:
+    file1_type = uploaded_file1.name.split(".")[-1]
+    file2_type = uploaded_file2.name.split(".")[-1]
+    st.sidebar.success(f"Archivos adicionales {uploaded_file1.name} y {uploaded_file2.name} cargados con éxito.")
 
-if st.sidebar.button("Comparar Diferencias con Manual") and uploaded_reference_file and uploaded_compare_file:
-    texto_referencia = extraer_texto(reference_file_type, uploaded_reference_file)
-    tokens_referencia = tokenizar_lineamientos([texto_referencia])
-    texto_comparar = extraer_texto(compare_file_type, uploaded_compare_file)
-    diferencias = encontrar_diferencias(texto_comparar, texto_referencia)
-    if diferencias:
-        diferencias_vectorizadas = vectorizar_y_tokenizar_diferencias(
-            diferencias, tokens_referencia, uploaded_compare_file.name, uploaded_reference_file.name
-        )
-        st.success("Las diferencias han sido encontradas y vectorizadas.")
-        st.header("Diferencias Encontradas")
+if st.sidebar.button("Comparar Documentos Adicionales") and uploaded_file1 and uploaded_file2:
+    if 'tokens_referencia' in locals():
+        diferencias_vectorizadas1, diferencias_vectorizadas2 = compare_additional_files(tokens_referencia, uploaded_file1, uploaded_file2, file1_type, file2_type)
+    else:
+        st.error("Primero debes cargar y vectorizar el manual de referencia.")
+
+# Función para verificar cumplimiento de las diferencias con el manual
+def verify_differences_compliance(diferencias_vectorizadas, tokens_referencia):
+    diferencias_no_cumplen = []
+    for diferencia in diferencias_vectorizadas:
+        if diferencia['contenido_documento'] not in tokens_referencia:
+            diferencias_no_cumplen.append(diferencia)
+    
+    if diferencias_no_cumplen:
+        st.warning("Algunas diferencias no cumplen con las normativas establecidas en el manual de referencia.")
+        st.header("Diferencias No Cumplen con el Manual")
         diferencias_tabla = [
             [diferencia.get('seccion', 'N/A'), 
              diferencia.get('contenido_referencia', 'N/A'), 
              diferencia.get('contenido_documento', 'N/A'), 
              diferencia.get('tipo', 'N/A'),
              diferencia.get('recomendacion', 'N/A')]
-            for diferencia in diferencias_vectorizadas
+            for diferencia in diferencias_no_cumplen
         ]
-        st.table(diferencias_tabla)
+        st.table(pd.DataFrame(diferencias_tabla, columns=["Línea", "Sección", "Contenido de Referencia", "Tipo", "Recomendación"]))
     else:
-        st.info("No se encontraron diferencias entre los documentos.")
+        st.success("Todas las diferencias cumplen con las normativas establecidas en el manual de referencia.")
+
+if st.sidebar.button("Verificar Cumplimiento de Diferencias") and uploaded_file1 and uploaded_file2:
+    if 'tokens_referencia' in locals():
+        verify_differences_compliance(diferencias_vectorizadas1, tokens_referencia)
+        verify_differences_compliance(diferencias_vectorizadas2, tokens_referencia)
+    else:
+        st.error("Primero debes cargar y vectorizar el manual de referencia.")
